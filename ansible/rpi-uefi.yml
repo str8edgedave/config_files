@@ -1,1 +1,109 @@
 ---
+- hosts: all
+  vars:
+    _local_debug: true
+    _local_uefi_version: "0.0.0"
+    _install_dir: '/boot/efi'
+    _upstream_uefi_version: "0.0.0"
+    go_arch_map:
+      i386: '386'
+      x86_64: 'amd64'
+      aarch64: 'arm64'
+      armv7l: 'armv7'
+      armv6l: 'armv6'
+    go_arch: "{{ go_arch_map[ansible_architecture] | default(ansible_architecture) }}"
+
+  tasks:
+  - name: Check installed UEFI version
+    become: yes
+    ansible.builtin.set_fact:
+      _local_uefi_version: "{{ ansible_bios_version }}"
+      _local_uefi_date: "{{ ansible_bios_date }}"
+      _local_board_name: "{{ ansible_board_name }}"
+      _local_board_version: "{{ ansible_board_version }}"
+    when: ansible_board_name in ['Raspberry Pi 4 Model B']
+
+  - name: Display results
+    ansible.builtin.debug:
+      msg: "{{inventory_hostname}}{{_local_uefi_version}}/{{_local_uefi_date}}/{{_local_board_name}}/{{_local_board_version}}"
+    when: ansible_board_name in ['Raspberry Pi 4 Model B']
+
+  - name: Check latest release
+    become: no
+    ansible.builtin.uri:
+      url: https://api.github.com/repos/pftf/RPi4/releases/latest
+      return_content: true
+      method: GET
+      status_code: 200
+      body_format: json
+    register: _latest_version
+    until: _latest_version.status == 200
+    retries: 5
+    run_once: true
+    delegate_to: localhost
+
+  - name: Set upstream UEFI version
+    ansible.builtin.set_fact:
+      _upstream_uefi_version: "{{ _latest_version.json.tag_name[1:] }}"
+    run_once: true
+    delegate_to: localhost
+
+  - name: Display dict
+    become: no
+    ansible.builtin.debug:
+      msg: "{{ _upstream_uefi_version }}"
+    run_once: true
+    delegate_to: localhost
+
+  - name: Download {{ _upstream_uefi_version}} UEFI zip to local folder
+    ansible.builtin.get_url:
+      url: "https://github.com/pftf/RPi4/releases/download/v{{_upstream_uefi_version}}/RPi4_UEFI_Firmware_v{{_upstream_uefi_version}}.zip"
+      dest: "/home/ansible/ansible/files/"
+      mode: '0644'
+    register: _download_binary
+    until: _download_binary is succeeded
+    retries: 5
+    delay: 2
+    delegate_to: localhost
+    run_once: true
+    when: _upstream_uefi_version is version(_local_uefi_version, '>', version_type='strict')
+
+  - name: Install RPi4 UEFI on Fedora systems
+    block:
+    - name: Copy UEFI file to remote server
+      ansible.builtin.copy:
+        src: "/home/ansible/ansible/files/RPi4_UEFI_Firmware_v{{_upstream_uefi_version}}.zip"
+        dest: "/tmp"
+    - name: backup config.txt
+      ansible.builtin.copy:
+        remote_src: true
+        src: "/boot/efi/config.txt"
+        dest: "/boot/efi/config.backup"
+        backup: yes
+    - name: create rpi tmp dir
+      ansible.builtin.file:
+        path: "/tmp/rpi"
+        state: directory
+        mode: '0770'
+    - name: Uncompress UEFI archive
+      ansible.builtin.unarchive:
+        remote_src: yes
+        src: "/tmp/RPi4_UEFI_Firmware_v{{_upstream_uefi_version}}.zip"
+        dest: "/tmp/rpi"
+        owner: "root"
+        group: "root"
+        list_files: yes
+    - name: Copy UEFI files
+      ansible.builtin.copy:
+        remote_src: true
+        src: "/tmp/rpi/"
+        dest: "/boot/efi/"
+    - name: Delete files
+      ansible.builtin.file:
+        state: absent
+        path: "{{ item }}"
+        loop:
+          - "/tmp/RPi4_UEFI_Firmware_v{{_upstream_uefi_version}}.zip"
+          - "/tmp/rpi"
+    become: yes
+    when: ansible_board_name in ['Raspberry Pi 4 Model B']
