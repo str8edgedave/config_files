@@ -6,4 +6,4 @@ All quadlet .container and .pod files have the PublishPort values set to 8880. P
 
 | Container | Container Repository | rootful/rootless |
 |---|---|---|
-| wifi-card | https://hub.docker.com/r/bndw/wifi-card | rootless |
+| [wifi-card.container](https://github.com/str8edgedave/config_files/blob/main/containers/wifi-card.container) | https://hub.docker.com/r/bndw/wifi-card | rootless |
