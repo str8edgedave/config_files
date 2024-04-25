@@ -1,0 +1,13 @@
+[Unit]
+Description=wifi-card - qr code generator for wifi networks
+
+[Container]
+Image=docker.io/bndw/wifi-card:latest
+AutoUpdate=registry
+PublishPort=8881:80
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target multi-user.target
